@@ -1,4 +1,4 @@
-name: athena-COMPONENT_NAME
+name: athena-dotenv
 
 version: 0.1.0
 
@@ -6,15 +6,15 @@ crystal: '>= 0.36.0'
 
 license: MIT
 
-repository: https://github.com/athena-framework/COMPONENT_NAME
+repository: https://github.com/athena-framework/dotenv
 
-documentation: https://athenaframework.org/NAMESPACE_NAME
+documentation: https://athenaframework.org/Dotenv
 
 description: |
-  DESCRIPTION.
+  Registers environment variables from a .env file.
 
 authors:
-  - CREATOR_NAME <CREATOR_EMAIL>
+  - George Dietrich <george@dietrich.app>
 
 development_dependencies:
   ameba:
