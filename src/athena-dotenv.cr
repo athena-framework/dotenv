@@ -205,12 +205,17 @@ class Athena::Dotenv
         previous_char = char
         char = @reader.next_char
         while @reader.has_next? && !char.in?('\n', '"', '\'') && !((previous_char.in?(' ', '\t')) && '#' == char)
+          if '\\' == char && @reader.has_next? && @reader.peek_next_char.in? '\'', '"'
+            char = @reader.next_char
+          end
+
           value += (previous_char = char)
 
           char = @reader.next_char
         end
 
         value = value.strip
+
         resolved_value = value
         resolved_value = self.resolve_variables resolved_value, loaded_vars
         resolved_value = self.resolve_commands resolved_value, loaded_vars
@@ -264,21 +269,44 @@ class Athena::Dotenv
     /x
 
     value = value.gsub regex do |_, match|
+      if 1 == match["backslashes"].size % 2
+        return match[0][0, 1]
+      end
+
       # Unescaped $ not followed by var name
+      if match["name"]?.nil?
+        return match[0]
+      end
 
       if "{" == match["opening_brace"] && match["closing_brace"]?.nil?
         raise self.create_format_exception "Unclosed braces on variable expansion"
       end
 
-      ""
+      name = match["name"]
+
+      value = if loaded_vars.includes?(name) && @values.has_key?(name)
+                @values[name]
+              elsif @values.has_key? name
+                @values[name]
+              else
+                ENV.fetch name, ""
+              end
+
+      if value.empty? && (default_value = match["default_value"]?.presence)
+        if unsupported_char = default_value.each_char.find { |c| c.in? '\'', '"', '{', '$' }
+          raise self.create_format_exception "Unsupported character '#{unsupported_char}' found in the default value of variable '$#{name}'"
+        end
+      end
+
+      value
     end
 
     value
   end
 
   private def skip_empty_lines : Nil
-    while @reader.current_char.whitespace?
-      @reader.next_char
+    if match = (/(?:\s*+(?:#[^\n]*+)?+)++/).match(@data, @reader.pos, Regex::MatchOptions[:anchored])
+      self.advance_reader match[0]
     end
   end
 end
