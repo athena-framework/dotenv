@@ -14,7 +14,7 @@ class Athena::Dotenv
 
   getter prod_envs : Set(String) = Set{"prod"}
 
-  @path : String | Path | Nil
+  @path : String | ::Path = ""
   @data = ""
   @values = Hash(String, String).new
   @reader : Char::Reader
@@ -27,7 +27,7 @@ class Athena::Dotenv
     @reader = uninitialized Char::Reader
   end
 
-  def load(*paths : String | Path) : Nil
+  def load(*paths : String | ::Path) : Nil
     self.load false, paths
   end
 
@@ -104,12 +104,40 @@ class Athena::Dotenv
     @reader.pos += string.size
   end
 
+  private def create_format_exception(message : String) : Athena::Dotenv::Exceptions::Format
+    line_pos = 0
+    line_idx = 0
+    line = nil
+
+    @data.each_line do |line|
+      line_pos += line.size
+
+      if line_pos > @reader.pos
+        line = line_idx
+        break
+      end
+
+      line_idx += 1
+    end
+
+    # If `line` is still `nil`, the error would be on the last line.
+    line = line || line_idx
+
+    Athena::Dotenv::Exceptions::Format.new(
+      message,
+      Athena::Dotenv::Exceptions::Format::Context.new(
+        @data,
+        @path,
+        line,
+        @reader.pos
+      )
+    )
+  end
+
   private def lex_varname : String
     unless match = /(export[ \t]++)?(#{VARNAME_REGEX})/.match(@data, @reader.pos, Regex::MatchOptions[:anchored])
       raise "Invalid character in variable name"
     end
-
-    # pp match
 
     self.advance_reader match[0]
 
@@ -171,7 +199,7 @@ class Athena::Dotenv
         # gsub `\\\\` with `\\`?
 
         if resolved_value == value && value.each_char.any? &.whitespace?
-          raise "A value containing spaces must be surrounded by quotes"
+          raise self.create_format_exception "A value containing spaces must be surrounded by quotes"
         end
 
         v += resolved_value
@@ -189,7 +217,7 @@ class Athena::Dotenv
     v
   end
 
-  private def load(override_existing_vars : Bool, paths : Enumerable(String | Path)) : Nil
+  private def load(override_existing_vars : Bool, paths : Enumerable(String | ::Path)) : Nil
     paths.each do |path|
       if !File.readable?(path) || File.directory?(path)
         raise Athena::Dotenv::Exceptions::Path.new path
@@ -213,11 +241,3 @@ class Athena::Dotenv
     end
   end
 end
-
-env = Athena::Dotenv.new
-
-env.load "foo.env"
-
-pp "DONE!"
-
-pp ENV["FOO"]?
