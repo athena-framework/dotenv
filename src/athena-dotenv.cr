@@ -118,6 +118,31 @@ class Athena::Dotenv
     )
   end
 
+  private def lex_nested_expression : String
+    char = @reader.next_char
+    value = ""
+
+    until char.in? '\n', ')'
+      value += char
+
+      if '(' == char
+        value += "#{self.lex_nested_expression})"
+      end
+
+      char = @reader.next_char
+
+      unless @reader.has_next?
+        raise self.create_format_exception "Missing closing parenthesis"
+      end
+    end
+
+    if '\n' == char
+      raise self.create_format_exception "Missing closing parenthesis"
+    end
+
+    value
+  end
+
   private def lex_varname : String
     unless match = /(export[ \t]++)?(#{VARNAME_REGEX})/.match(@data, @reader.pos, Regex::MatchOptions[:anchored])
       raise self.create_format_exception "Invalid character in variable name"
@@ -201,8 +226,8 @@ class Athena::Dotenv
 
         v += resolved_value
       else
-        value = "#{char}"
-        previous_char = char
+        value = ""
+        previous_char = @reader.previous_char
         char = @reader.next_char
         while @reader.has_next? && !char.in?('\n', '"', '\'') && !((previous_char.in?(' ', '\t')) && '#' == char)
           if '\\' == char && @reader.has_next? && @reader.peek_next_char.in? '\'', '"'
@@ -210,6 +235,11 @@ class Athena::Dotenv
           end
 
           value += (previous_char = char)
+
+          if '$' == char && @reader.has_next? && '(' == @reader.peek_next_char
+            @reader.next_char
+            value += "(#{self.lex_nested_expression})"
+          end
 
           char = @reader.next_char
         end
@@ -251,7 +281,30 @@ class Athena::Dotenv
   end
 
   private def resolve_commands(value : String, loaded_vars : Set(String)) : String
-    value
+    return value unless value.includes? '$'
+
+    regex = /
+      (\\\\)?               # escaped with a backslash?
+      \$
+      (?<cmd>
+          \(                # require opening parenthesis
+          ([^()]|\g<cmd>)+  # allow any number of non-parens, or balanced parens (by nesting the <cmd> expression recursively)
+          \)                # require closing paren
+      )
+    /x
+
+    value.gsub regex do |_, match|
+      if '\\' == match[1]
+        return match[0][0, 1]
+      end
+
+      {% if flag? :win32 %}
+        # TODO: Support windows?
+        raise RuntimeError.new "Resolving commands is not supported on Windows."
+      {% end %}
+
+      process = ""
+    end
   end
 
   private def resolve_variables(value : String, loaded_vars : Set(String)) : String
@@ -268,8 +321,8 @@ class Athena::Dotenv
       (?P<closing_brace>\})?           # optional closing brace
     /x
 
-    value = value.gsub regex do |_, match|
-      if 1 == match["backslashes"].size % 2
+    value.gsub regex do |_, match|
+      if match["backslashes"].size.odd?
         return match[0][0, 1]
       end
 
@@ -300,8 +353,6 @@ class Athena::Dotenv
 
       value
     end
-
-    value
   end
 
   private def skip_empty_lines : Nil
