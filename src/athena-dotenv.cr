@@ -5,7 +5,7 @@ require "./exceptions/*"
 class Athena::Dotenv
   VERSION = "0.1.0"
 
-  private VARNAME_REGEX = /[A-Z][A-Z0-9_]*+/i
+  private VARNAME_REGEX = /(?i:[A-Z][A-Z0-9_]*+)/
 
   private enum State
     VARNAME
@@ -138,7 +138,7 @@ class Athena::Dotenv
       raise self.create_format_exception "Missing = in the environment variable declaration"
     end
 
-    # @reader.pos += 1
+    @reader.pos += 1
 
     match[2]
   end
@@ -152,7 +152,7 @@ class Athena::Dotenv
     end
 
     if @reader.current_char.whitespace?
-      raise self.create_format_exception "Whitespace characters are not supported after the variable name"
+      raise self.create_format_exception "Whitespace is not supported before the value"
     end
 
     loaded_vars = ENV.fetch("ATHENA_DOTENV_VARS", "").split(',').to_set
@@ -201,7 +201,7 @@ class Athena::Dotenv
 
         v += resolved_value
       else
-        value = ""
+        value = "#{char}"
         previous_char = char
         char = @reader.next_char
         while @reader.has_next? && !char.in?('\n', '"', '\'') && !((previous_char.in?(' ', '\t')) && '#' == char)
@@ -250,6 +250,29 @@ class Athena::Dotenv
   end
 
   private def resolve_variables(value : String, loaded_vars : Set(String)) : String
+    return value unless value.includes? '$'
+
+    regex = /
+      (?<!\\)
+      (?P<backslashes>\\*)             # escaped with a backslash?
+      \$
+      (?!\()                           # no opening parenthesis
+      (?P<opening_brace>\{)?           # optional brace
+      (?P<name>(?i:[A-Z][A-Z0-9_]*+))? # var name
+      (?P<default_value>:[-=][^\}]++)? # optional default value
+      (?P<closing_brace>\})?           # optional closing brace
+    /x
+
+    value = value.gsub regex do |_, match|
+      # Unescaped $ not followed by var name
+
+      if "{" == match["opening_brace"] && match["closing_brace"]?.nil?
+        raise self.create_format_exception "Unclosed braces on variable expansion"
+      end
+
+      ""
+    end
+
     value
   end
 
@@ -259,7 +282,3 @@ class Athena::Dotenv
     end
   end
 end
-
-# dotenv = Athena::Dotenv.new
-
-# pp dotenv.parse "FOO=\"foo\nBAR=\"bar\""
