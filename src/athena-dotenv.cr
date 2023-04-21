@@ -18,6 +18,7 @@ class Athena::Dotenv
   @data = ""
   @values = Hash(String, String).new
   @reader : Char::Reader
+  @line_number = 1
 
   def initialize(
     @env_key : String = "APP_ENV",
@@ -102,33 +103,16 @@ class Athena::Dotenv
 
   private def advance_reader(string : String) : Nil
     @reader.pos += string.size
+    @line_number += string.count '\n'
   end
 
   private def create_format_exception(message : String) : Athena::Dotenv::Exceptions::Format
-    line_pos = 0
-    line_idx = 0
-    line = nil
-
-    @data.each_line do |line|
-      line_pos += line.size
-
-      if line_pos > @reader.pos
-        line = line_idx
-        break
-      end
-
-      line_idx += 1
-    end
-
-    # If `line` is still `nil`, the error would be on the last line.
-    line = line || line_idx
-
     Athena::Dotenv::Exceptions::Format.new(
       message,
       Athena::Dotenv::Exceptions::Format::Context.new(
         @data,
         @path,
-        line,
+        @line_number,
         @reader.pos
       )
     )
@@ -136,22 +120,22 @@ class Athena::Dotenv
 
   private def lex_varname : String
     unless match = /(export[ \t]++)?(#{VARNAME_REGEX})/.match(@data, @reader.pos, Regex::MatchOptions[:anchored])
-      raise "Invalid character in variable name"
+      raise self.create_format_exception "Invalid character in variable name"
     end
 
     self.advance_reader match[0]
 
     if !@reader.has_next? || @reader.current_char.in? '\n', '#'
-      raise "Unable to unset an environment variable" if match[1]?
-      raise "Missing = in the environment variable declaration"
+      raise self.create_format_exception "Unable to unset an environment variable" if match[1]?
+      raise self.create_format_exception "Missing = in the environment variable declaration"
     end
 
     if @reader.current_char.whitespace?
-      raise "Whitespace characters are not supported after the variable name"
+      raise self.create_format_exception "Whitespace characters are not supported after the variable name"
     end
 
     if '=' != @reader.current_char
-      raise "Missing = in the environment variable declaration"
+      raise self.create_format_exception "Missing = in the environment variable declaration"
     end
 
     # @reader.pos += 1
@@ -168,7 +152,7 @@ class Athena::Dotenv
     end
 
     if @reader.current_char.whitespace?
-      raise "Whitespace characters are not supported after the variable name"
+      raise self.create_format_exception "Whitespace characters are not supported after the variable name"
     end
 
     loaded_vars = ENV.fetch("ATHENA_DOTENV_VARS", "").split(',').to_set
@@ -180,8 +164,42 @@ class Athena::Dotenv
       when '\''
         len = 0
 
-        pp @reader.take_while { |c| c != '\'' }
+        loop do
+          unless @reader.has_next?
+            raise self.create_format_exception "Missing quote to end the value"
+          end
+
+          char = @reader.next_char
+
+          break if char == '\''
+        end
       when '"'
+        value = ""
+
+        char = @reader.next_char
+
+        unless @reader.has_next?
+          raise self.create_format_exception "Missing quote to end the value"
+        end
+
+        # TODO: Handle 4x `\`?
+        while '"' != char
+          value += char
+
+          char = @reader.next_char
+
+          unless @reader.has_next?
+            raise self.create_format_exception "Missing quote to end the value"
+          end
+        end
+
+        @reader.next_char
+        resolved_value = value
+        resolved_value = self.resolve_variables resolved_value, loaded_vars
+        resolved_value = self.resolve_commands resolved_value, loaded_vars
+        # gsub `\\\\` with `\\`?
+
+        v += resolved_value
       else
         value = ""
         previous_char = char
@@ -241,3 +259,7 @@ class Athena::Dotenv
     end
   end
 end
+
+# dotenv = Athena::Dotenv.new
+
+# pp dotenv.parse "FOO=\"foo\nBAR=\"bar\""
