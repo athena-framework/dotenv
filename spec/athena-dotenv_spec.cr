@@ -1,6 +1,36 @@
 require "./spec_helper"
 
 struct DotEnvTest < ASPEC::TestCase
+  @[DataProvider("env_data")]
+  def test_parse(data : String, expected : Hash(String, String)) : Nil
+    Athena::Dotenv.new.parse(data).should eq expected
+  end
+
+  def env_data : Array
+    tests = [
+      # Backslashes
+      {"FOO=foo\\\\bar", {"FOO" => "foo\\bar"}},
+      {"FOO='foo\\\\bar'", {"FOO" => "foo\\\\bar"}},
+      {"FOO=\"foo\\\\bar\"", {"FOO" => "foo\\bar"}},
+
+      # escaped backslash in front of variable
+      {"BAR=bar\nFOO=foo\\\\$BAR", {"BAR" => "bar", "FOO" => "foo\\bar"}},
+      {"BAR=bar\nFOO='foo\\\\$BAR'", {"BAR" => "bar", "FOO" => "foo\\\\$BAR"}},
+      {"BAR=bar\nFOO=\"foo\\\\$BAR\"", {"BAR" => "bar", "FOO" => "foo\\bar"}},
+
+      # Spaces
+      {"FOO=bar", {"FOO" => "bar"}},
+      {" FOO=bar ", {"FOO" => "bar"}},
+      {"FOO=", {"FOO" => ""}},
+      {"FOO=\n\n\nBAR=bar", {"FOO" => "", "BAR" => "bar"}},
+      {"FOO=  ", {"FOO" => ""}},
+      {"FOO=\nBAR=bar", {"FOO" => "", "BAR" => "bar"}},
+
+    ] of {String, Hash(String, String)}
+
+    tests
+  end
+
   @[DataProvider("env_data_with_format_errors")]
   def test_parse_with_format_error(data : String, error_message : String) : Nil
     dotenv = Athena::Dotenv.new
@@ -30,6 +60,10 @@ struct DotEnvTest < ASPEC::TestCase
       {"FOO=\nBAR=${FOO:-a$a}", "Unsupported character '$' found in the default value of variable '$FOO' in '.env' at line 2.\n...FOO=\\nBAR=${FOO:-a$a}...\n                       ^ line 2 offset 20"},
       {"FOO=\nBAR=${FOO:-a\"a}", "Unclosed braces on variable expansion in '.env' at line 2.\n...FOO=\\nBAR=${FOO:-a\"a}...\n                    ^ line 2 offset 17"},
     ] of {String, String}
+
+    {% if flag? :win32 %}
+      tests << {"FOO=$((1dd2))", "Issue expanding a command (%s\n) in '.env' at line 1.\n...FOO=$((1dd2))...\n               ^ line 1 offset 13"}
+    {% end %}
 
     tests
   end

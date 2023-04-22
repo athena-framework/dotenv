@@ -190,14 +190,17 @@ class Athena::Dotenv
         len = 0
 
         loop do
-          unless @reader.has_next?
+          if @reader.pos + (len += 1) == @data.size
+            @reader.pos += len
+
             raise self.create_format_exception "Missing quote to end the value"
           end
 
-          char = @reader.next_char
-
-          break if char == '\''
+          break if @data[@reader.pos + len] == '\''
         end
+
+        v += @data[1 + @reader.pos, len - 1]
+        @reader.pos += 1 + len
       when '"'
         value = ""
 
@@ -207,8 +210,7 @@ class Athena::Dotenv
           raise self.create_format_exception "Missing quote to end the value"
         end
 
-        # TODO: Handle 4x `\`?
-        while '"' != char
+        while '"' != char || ('\\' == @data[@reader.pos - 1] && '\\' != @data[@reader.pos - 2])
           value += char
 
           char = @reader.next_char
@@ -219,10 +221,11 @@ class Athena::Dotenv
         end
 
         @reader.next_char
+        value = value.gsub(%(\\"), '"').gsub("\\r", "\r").gsub("\\n", "\n")
         resolved_value = value
         resolved_value = self.resolve_variables resolved_value, loaded_vars
         resolved_value = self.resolve_commands resolved_value, loaded_vars
-        # gsub `\\\\` with `\\`?
+        resolved_value = resolved_value.gsub "\\\\", "\\"
 
         v += resolved_value
       else
@@ -249,7 +252,7 @@ class Athena::Dotenv
         resolved_value = value
         resolved_value = self.resolve_variables resolved_value, loaded_vars
         resolved_value = self.resolve_commands resolved_value, loaded_vars
-        # gsub `\\\\` with `\\`?
+        resolved_value = resolved_value.gsub "\\\\", "\\"
 
         if resolved_value == value && value.each_char.any? &.whitespace?
           raise self.create_format_exception "A value containing spaces must be surrounded by quotes"
@@ -331,7 +334,7 @@ class Athena::Dotenv
         return match[0]
       end
 
-      if "{" == match["opening_brace"] && match["closing_brace"]?.nil?
+      if "{" == match["opening_brace"]? && match["closing_brace"]?.nil?
         raise self.create_format_exception "Unclosed braces on variable expansion"
       end
 
@@ -346,12 +349,20 @@ class Athena::Dotenv
               end
 
       if value.empty? && (default_value = match["default_value"]?.presence)
-        if unsupported_char = default_value.each_char.find { |c| c.in? '\'', '"', '{', '$' }
+        if unsupported_char = default_value.each_char.find &.in?('\'', '"', '{', '$')
           raise self.create_format_exception "Unsupported character '#{unsupported_char}' found in the default value of variable '$#{name}'"
+        end
+
+        if '=' == match["default_value"][1]
+          @values[name] = value
         end
       end
 
-      value
+      if !match["opening_brace"]?.presence && !match["closing_brace"]?.nil?
+        value += '}'
+      end
+
+      "#{match["backslashes"]}#{value}"
     end
   end
 
