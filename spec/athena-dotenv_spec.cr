@@ -7,6 +7,9 @@ struct DotEnvTest < ASPEC::TestCase
   end
 
   def env_data : Array
+    ENV["LOCAL"] = "local"
+    ENV["REMOTE"] = "remote"
+
     tests = [
       # Backslashes
       {"FOO=foo\\\\bar", {"FOO" => "foo\\bar"}},
@@ -72,7 +75,50 @@ struct DotEnvTest < ASPEC::TestCase
       {"FOO=NOT#COMMENT", {"FOO" => "NOT#COMMENT"}},
       {"FOO=  # Comment", {"FOO" => ""}},
 
+      # Edge cases - no conversions, only strings as values
+      {"FOO=0", {"FOO" => "0"}},
+      {"FOO=false", {"FOO" => "false"}},
+      {"FOO=null", {"FOO" => "null"}},
+
+      # Export
+      {"export FOO=bar", {"FOO" => "bar"}},
+      {"  export   FOO=bar", {"FOO" => "bar"}},
+
+      # Variable expansion
+      {"FOO=BAR\nBAR=$FOO", {"FOO" => "BAR", "BAR" => "BAR"}},
+      {"FOO=BAR\nBAR=\"$FOO\"", {"FOO" => "BAR", "BAR" => "BAR"}},
+      {"FOO=BAR\nBAR='$FOO'", {"FOO" => "BAR", "BAR" => "$FOO"}},
+      {"FOO_BAR9=BAR\nBAR=$FOO_BAR9", {"FOO_BAR9" => "BAR", "BAR" => "BAR"}},
+      {"FOO=BAR\nBAR=${FOO}Z", {"FOO" => "BAR", "BAR" => "BARZ"}},
+      {"FOO=BAR\nBAR=$FOO}", {"FOO" => "BAR", "BAR" => "BAR}"}},
+      {"FOO=BAR\nBAR=\\$FOO", {"FOO" => "BAR", "BAR" => "$FOO"}},
+      {"FOO=\" \\$ \"", {"FOO" => " $ "}},
+      {"FOO=\" $ \"", {"FOO" => " $ "}},
+      {"BAR=$LOCAL", {"BAR" => "local"}},
+      {"BAR=$REMOTE", {"BAR" => "remote"}},
+      {"FOO=$NOTDEFINED", {"FOO" => ""}},
+      {"FOO=BAR\nBAR=${FOO:-TEST}", {"FOO" => "BAR", "BAR" => "BAR"}},
+      {"FOO=BAR\nBAR=${NOTDEFINED:-TEST}", {"FOO" => "BAR", "BAR" => "TEST"}},
+      {"FOO=\nBAR=${FOO:-TEST}", {"FOO" => "", "BAR" => "TEST"}},
+      {"FOO=\nBAR=$FOO:-TEST}", {"FOO" => "", "BAR" => "TEST}"}},
+      {"FOO=BAR\nBAR=${FOO:=TEST}", {"FOO" => "BAR", "BAR" => "BAR"}},
+      {"FOO=BAR\nBAR=${NOTDEFINED:=TEST}", {"FOO" => "BAR", "NOTDEFINED" => "TEST", "BAR" => "TEST"}},
+      {"FOO=\nBAR=${FOO:=TEST}", {"FOO" => "TEST", "BAR" => "TEST"}},
+      {"FOO=\nBAR=$FOO:=TEST}", {"FOO" => "TEST", "BAR" => "TEST}"}},
+      {"FOO=foo\nFOOBAR=${FOO}${BAR}", {"FOO" => "foo", "FOOBAR" => "foo"}},
+
     ] of {String, Hash(String, String)}
+
+    {% if flag? :unix %}
+      tests.push(
+        {"FOO=$(echo foo)", {"FOO" => "foo"}},
+        {"FOO=$((1+2))", {"FOO" => "3"}},
+        {"FOO=FOO$((1+2))BAR", {"FOO" => "FOO3BAR"}},
+        {"FOO=$(echo \"$(echo \"$(echo \"$(echo foo)\")\")\")", {"FOO" => "foo"}},
+        {"FOO=$(echo \"Quotes won't be a problem\")", {"FOO" => "Quotes won't be a problem"}},
+        {"FOO=bar\nBAR=$(echo \"FOO is $FOO\")", {"FOO" => "bar", "BAR" => "FOO is bar"}},
+      )
+    {% end %}
 
     tests
   end

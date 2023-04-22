@@ -297,8 +297,8 @@ class Athena::Dotenv
     /x
 
     value.gsub regex do |_, match|
-      if '\\' == match[1]
-        next match[0][0, 1]
+      if '\\' == match[1]?
+        next match[0][1..]
       end
 
       {% if flag? :win32 %}
@@ -306,7 +306,29 @@ class Athena::Dotenv
         raise RuntimeError.new "Resolving commands is not supported on Windows."
       {% end %}
 
-      process = ""
+      env = {} of String => String
+      @values.each do |k, v|
+        if loaded_vars.includes?(k) || !ENV.has_key?(k)
+          env[k] = v
+        end
+      end
+
+      output = IO::Memory.new
+      error = IO::Memory.new
+
+      status = Process.run(
+        "echo #{match[0]}",
+        shell: true,
+        env: env,
+        output: output,
+        error: error
+      )
+
+      unless status.success?
+        raise self.create_format_exception "Issue expanding a command (#{error})"
+      end
+
+      output.to_s.gsub /[\r\n]+$/, ""
     end
   end
 
@@ -352,6 +374,8 @@ class Athena::Dotenv
         if unsupported_char = default_value.each_char.find &.in?('\'', '"', '{', '$')
           raise self.create_format_exception "Unsupported character '#{unsupported_char}' found in the default value of variable '$#{name}'"
         end
+
+        value = match["default_value"][2..]
 
         if '=' == match["default_value"][1]
           @values[name] = value
