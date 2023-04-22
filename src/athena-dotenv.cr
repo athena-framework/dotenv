@@ -28,8 +28,51 @@ class Athena::Dotenv
     @reader = uninitialized Char::Reader
   end
 
+  # Loads one or more specific env files.
   def load(*paths : String | ::Path) : Nil
     self.load false, paths
+  end
+
+  # Loads an env file, along with the related `.env.local`, `.env.$ENV`, and `.env.$ENV.local` files.
+  def load_environment(
+    path : String | ::Path,
+    env_key : String? = nil,
+    default_environment : String = "dev",
+    test_environments : Enumerable(String) = {"test"},
+    override_existing_vars : Bool = false
+  ) : Nil
+    env_key = env_key || @env_key
+
+    dist_path = "#{path}.dist"
+    if File.file?(path) && !File.file?(dist_path)
+      self.load override_existing_vars, {path}
+    else
+      self.load override_existing_vars, {dist_path}
+    end
+
+    unless env = ENV[env_key]?
+      self.populate({env_key => env = default_environment}, override_existing_vars)
+    end
+
+    local_path = "#{path}.local"
+    if !test_environments.includes?(env) && File.file?(local_path)
+      self.load override_existing_vars, {local_path}
+      env = ENV.fetch env_key, env
+    end
+
+    return if "local" == env
+
+    if File.file? p = "#{path}.#{env}"
+      self.load override_existing_vars, {p}
+    end
+
+    if File.file? p = "#{path}.#{env}.local"
+      self.load override_existing_vars, {p}
+    end
+  end
+
+  def overload(*paths : String | ::Path) : Nil
+    self.load true, paths
   end
 
   def parse(data : String, path : String = ".env") : Hash(String, String)
@@ -168,6 +211,7 @@ class Athena::Dotenv
     match[2]
   end
 
+  # ameba:disable Metrics/CyclomaticComplexity
   private def lex_value : String
     if match = (/[ \t]*+(?:#.*)?$/m).match(@data, @reader.pos, Regex::MatchOptions[:anchored])
       self.advance_reader match[0]
@@ -332,6 +376,7 @@ class Athena::Dotenv
     end
   end
 
+  # ameba:disable Metrics/CyclomaticComplexity
   private def resolve_variables(value : String, loaded_vars : Set(String)) : String
     return value unless value.includes? '$'
 
