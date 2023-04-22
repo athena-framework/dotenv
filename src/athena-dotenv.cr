@@ -260,12 +260,12 @@ class Athena::Dotenv
 
         v += resolved_value
 
-        if !@reader.has_next? && '#' == char
+        if @reader.has_next? && '#' == char
           break
         end
       end
 
-      break if !@reader.has_next? || @reader.current_char == '\n'
+      break unless @reader.has_next? && @reader.current_char != '\n'
     end
 
     self.skip_empty_lines
@@ -298,7 +298,7 @@ class Athena::Dotenv
 
     value.gsub regex do |_, match|
       if '\\' == match[1]
-        return match[0][0, 1]
+        next match[0][0, 1]
       end
 
       {% if flag? :win32 %}
@@ -326,12 +326,12 @@ class Athena::Dotenv
 
     value.gsub regex do |_, match|
       if match["backslashes"].size.odd?
-        return match[0][0, 1]
+        next match[0][1..]
       end
 
       # Unescaped $ not followed by var name
       if match["name"]?.nil?
-        return match[0]
+        next match[0]
       end
 
       if "{" == match["opening_brace"]? && match["closing_brace"]?.nil?

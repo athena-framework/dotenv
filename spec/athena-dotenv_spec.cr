@@ -13,10 +13,14 @@ struct DotEnvTest < ASPEC::TestCase
       {"FOO='foo\\\\bar'", {"FOO" => "foo\\\\bar"}},
       {"FOO=\"foo\\\\bar\"", {"FOO" => "foo\\bar"}},
 
-      # escaped backslash in front of variable
+      # Escaped backslash in front of variable
       {"BAR=bar\nFOO=foo\\\\$BAR", {"BAR" => "bar", "FOO" => "foo\\bar"}},
       {"BAR=bar\nFOO='foo\\\\$BAR'", {"BAR" => "bar", "FOO" => "foo\\\\$BAR"}},
       {"BAR=bar\nFOO=\"foo\\\\$BAR\"", {"BAR" => "bar", "FOO" => "foo\\bar"}},
+
+      {"FOO=foo\\\\\\$BAR", {"FOO" => "foo\\$BAR"}},
+      {"FOO='foo\\\\\\$BAR'", {"FOO" => "foo\\\\\\$BAR"}},
+      {"FOO=\"foo\\\\\\$BAR\"", {"FOO" => "foo\\$BAR"}},
 
       # Spaces
       {"FOO=bar", {"FOO" => "bar"}},
@@ -25,6 +29,48 @@ struct DotEnvTest < ASPEC::TestCase
       {"FOO=\n\n\nBAR=bar", {"FOO" => "", "BAR" => "bar"}},
       {"FOO=  ", {"FOO" => ""}},
       {"FOO=\nBAR=bar", {"FOO" => "", "BAR" => "bar"}},
+
+      # Newlines
+      {"\n\nFOO=bar\r\n\n", {"FOO" => "bar"}},
+      {"FOO=bar\r\nBAR=foo", {"FOO" => "bar", "BAR" => "foo"}},
+      {"FOO=bar\rBAR=foo", {"FOO" => "bar", "BAR" => "foo"}},
+      {"FOO=bar\nBAR=foo", {"FOO" => "bar", "BAR" => "foo"}},
+
+      # Quotes
+      {"FOO=\"bar\"\n", {"FOO" => "bar"}},
+      {"FOO=\"bar'foo\"\n", {"FOO" => "bar'foo"}},
+      {"FOO='bar'\n", {"FOO" => "bar"}},
+      {"FOO='bar\"foo'\n", {"FOO" => "bar\"foo"}},
+      {"FOO=\"bar\\\"foo\"\n", {"FOO" => "bar\"foo"}},
+      {"FOO=\"bar\nfoo\"", {"FOO" => "bar\nfoo"}},
+      {"FOO=\"bar\\rfoo\"", {"FOO" => "bar\rfoo"}}, # Double quote expands to real `\r`
+      {"FOO='bar\nfoo'", {"FOO" => "bar\nfoo"}},
+      {"FOO='bar\\rfoo'", {"FOO" => "bar\\rfoo"}}, # Single quotes keep the literal `\r`
+      {"FOO='bar\nfoo'", {"FOO" => "bar\nfoo"}},
+      {"FOO=\" FOO \"", {"FOO" => " FOO "}},
+      {"FOO=\"  \"", {"FOO" => "  "}},
+      {"PATH=\"c:\\\\\"", {"PATH" => "c:\\"}},
+      {"FOO=\"bar\nfoo\"", {"FOO" => "bar\nfoo"}},
+      {"FOO=BAR\\\"", {"FOO" => "BAR\""}},
+      {"FOO=BAR\\'BAZ", {"FOO" => "BAR'BAZ"}},
+      {"FOO=\\\"BAR", {"FOO" => "\"BAR"}},
+
+      # Concatenated values
+      {"FOO='bar''foo'\n", {"FOO" => "barfoo"}},
+      {"FOO='bar '' baz'", {"FOO" => "bar  baz"}},
+      {"FOO=bar\nBAR='baz'\"$FOO\"", {"FOO" => "bar", "BAR" => "bazbar"}},
+      {"FOO='bar '\\'' baz'", {"FOO" => "bar ' baz"}},
+
+      # Comments
+      {"#FOO=bar\nBAR=foo", {"BAR" => "foo"}},
+      {"#FOO=bar # Comment\nBAR=foo", {"BAR" => "foo"}},
+      {"FOO='bar foo' # Comment", {"FOO" => "bar foo"}},
+      {"FOO='bar#foo' # Comment", {"FOO" => "bar#foo"}},
+      {"# Comment\r\nFOO=bar\n# Comment\nBAR=foo", {"FOO" => "bar", "BAR" => "foo"}},
+      {"FOO=bar # Another comment\nBAR=foo", {"FOO" => "bar", "BAR" => "foo"}},
+      {"FOO=\n\n# comment\nBAR=bar", {"FOO" => "", "BAR" => "bar"}},
+      {"FOO=NOT#COMMENT", {"FOO" => "NOT#COMMENT"}},
+      {"FOO=  # Comment", {"FOO" => ""}},
 
     ] of {String, Hash(String, String)}
 
