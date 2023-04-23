@@ -97,6 +97,16 @@ require "./exceptions/*"
 #
 # Notice how only the double quotes version actually expands `\n` into a newline, whereas the others treat it as a literal `\n`.
 #
+# Quoted values may also extend over multiple lines:
+#
+# ```text
+# FOO="FOO
+# BAR\n
+# BAZ"
+# ```
+#
+# Both single and double quotes will include the actual newline characters, however only double quotes would expand the extra newline in `BAR\n`.
+#
 # #### Variables
 #
 # ENV vars can be used in values by prefixing the variable name with a `$` with optional opening and closing `{}`.
@@ -174,8 +184,7 @@ class Athena::Dotenv
   @line_number = 1
 
   def initialize(
-    @env_key : String = "APP_ENV",
-    @debug_key : String = "APP_DEBUG"
+    @env_key : String = "APP_ENV"
   )
     # Can't use a `getter!` macro since that would return a copy of the reader each time :/
     @reader = uninitialized Char::Reader
@@ -208,8 +217,11 @@ class Athena::Dotenv
   #
   # dotenv = Athena::Dotenv.new
   #
-  # dotenv.load "./.env"
-  # dotenv.load "./.env", "./.env.dev"
+  # # Use `APP_ENV`, or `dev`
+  # dotenv.load_environment "./.env"
+  #
+  # # Custom *env_key* and *default_environment*
+  # dotenv.load_environment "./.env", "ATHENA_ENV", "qa"
   # ```
   def load_environment(
     path : String | ::Path,
