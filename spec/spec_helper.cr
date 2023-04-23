@@ -1,2 +1,7 @@
 require "spec"
-require "../src/athena-COMPONENT_NAME"
+
+require "athena-spec"
+
+require "../src/athena-dotenv"
+
+ASPEC.run_all
