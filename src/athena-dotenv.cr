@@ -129,21 +129,23 @@ require "./exceptions/*"
 # DATE=$(date)
 # ```
 #
-# ### Overriding Values
+# ### File Precedence
 #
 # The default `.env` file defines _ALL_ ENV vars used within an application, with sane defaults.
 # This file should be committed and should not contain any sensitive values.
 #
 # However in some cases you may need to define values to override those in `.env`,
-# whether that be only for a single machine, or all machines in  specific environment.
+# whether that be only for a single machine, or all machines in a specific environment.
 #
 # For these purposes there are other `.env` files that are loaded in a specific order to allow for just this use case:
 #
-# * `.env` - Defines all ENV vars, and their default values, used by the application
+# * `.env` - Defines all ENV vars, and their default values, used by the application.
 # * `.env.local` - Overrides ENV vars for all environments, but only for the machine that contains the file.
 #       This file should _NOT_ be committed, and is ignored in the `test` environment to ensure reproducibility.
 # * `.env.<environment>` (e.g. `.env.test`) - Overrides ENV vars for only this one environment. These files _SHOULD_ be committed.
 # * `.env.<environment>.local` (e.g. `.env.test.local`) - Machine-specific overrides, but only for a single environment. This file should _NOT_ be committed.
+#
+# See `#load_environment` for more information.
 #
 # NOTE: Real ENV vars always win against those created in any `.env` file.
 #
@@ -179,12 +181,36 @@ class Athena::Dotenv
     @reader = uninitialized Char::Reader
   end
 
-  # Loads one or more specific env files.
+  # Loads each `.env` file within the provided *paths*.
+  #
+  # ```
+  # require "athena-dotenv"
+  #
+  # dotenv = Athena::Dotenv.new
+  #
+  # dotenv.load "./.env"
+  # dotenv.load "./.env", "./.env.dev"
+  # ```
   def load(*paths : String | ::Path) : Nil
     self.load false, paths
   end
 
-  # Loads an env file, along with the related `.env.local`, `.env.$ENV`, and `.env.$ENV.local` files.
+  # Loads a `.env` file and its related additional files based on their [precedence][Athena::Dotenv--file-precedence] if they exist.
+  #
+  # The current ENV is determined by the value of `APP_ENV`, which is configurable globally via `.new`, or for a single load via the *env_key* parameter.
+  # If no environment ENV var is defined, *default_environment* will be used.
+  # The `.env.local` file will _NOT_ be loaded if the current environment is included within *test_environments*.
+  #
+  # Existing ENV vars may optionally be overridden by passing `true` to *override_existing_vars*.
+  #
+  # ```
+  # require "athena-dotenv"
+  #
+  # dotenv = Athena::Dotenv.new
+  #
+  # dotenv.load "./.env"
+  # dotenv.load "./.env", "./.env.dev"
+  # ```
   def load_environment(
     path : String | ::Path,
     env_key : String? = nil,
@@ -222,14 +248,28 @@ class Athena::Dotenv
     end
   end
 
+  # Same as `#load`, but will override existing ENV vars.
   def overload(*paths : String | ::Path) : Nil
     self.load true, paths
   end
 
-  def parse(data : String, path : String = ".env") : Hash(String, String)
+  # Parses and returns a Hash based on the string contents of the provided *data* string.
+  # The original `.env` file path may also be provided to *path* for more meaningful error messages.
+  #
+  # ```
+  # require "athena-dotenv"
+  #
+  # path = "/path/to/.env"
+  # dotenv = Athena::Dotenv.new
+  #
+  # File.write path, "FOO=BAR"
+  #
+  # dotenv.parse File.read(path), path # => {"FOO" => "BAR"}
+  # ```
+  def parse(data : String, path : String | ::Path = ".env") : Hash(String, String)
     @path = path
-    @data = data.gsub("\r\n", "\n").gsub("\r", "\n")
-    @reader = Char::Reader.new @data.not_nil!
+    @data = data = data.gsub("\r\n", "\n").gsub("\r", "\n")
+    @reader = Char::Reader.new data
 
     @values.clear
 
@@ -261,6 +301,19 @@ class Athena::Dotenv
     end
   end
 
+  # Populates the provides *values* into the environment.
+  #
+  # Existing ENV vars may optionally be overridden by passing `true` to *override_existing_vars*.
+  #
+  # ```
+  # require "athena-dotenv"
+  #
+  # ENV["FOO"]? # => nil
+  #
+  # Athena::Dotenv.new.populate({"FOO" => "BAR"})
+  #
+  # ENV["FOO"]? # => "BAR"
+  # ```
   def populate(values : Hash(String, String), override_existing_vars : Bool = false) : Nil
     update_loaded_vars = false
 
