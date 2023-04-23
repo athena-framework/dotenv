@@ -4,4 +4,4 @@
 
 _Initial release._
 
-[0.1.0]: https://github.com/athena-framework/negotiation/releases/tag/v0.1.0
+[0.1.0]: https://github.com/athena-framework/dotenv/releases/tag/v0.1.0
