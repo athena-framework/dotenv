@@ -1,15 +1,19 @@
 require "./spec_helper"
 
 struct DotEnvTest < ASPEC::TestCase
+  def initialize
+    ENV.clear
+  end
+
   @[DataProvider("env_data")]
   def test_parse(data : String, expected : Hash(String, String)) : Nil
+    ENV["LOCAL"] = "local"
+    ENV["REMOTE"] = "remote"
+
     Athena::Dotenv.new.parse(data).should eq expected
   end
 
   def env_data : Array
-    ENV["LOCAL"] = "local"
-    ENV["REMOTE"] = "remote"
-
     tests = [
       # Backslashes
       {"FOO=foo\\\\bar", {"FOO" => "foo\\bar"}},
@@ -377,7 +381,7 @@ struct DotEnvTest < ASPEC::TestCase
 
     ENV["FOO"] = "foo"
     ENV["BAR"] = "bar"
-    ENV["BAZ"] = "ba"
+    ENV["BAZ"] = "bar"
     ENV["DOCUMENT_ROOT"] = "/var/www"
 
     Athena::Dotenv.new.populate({

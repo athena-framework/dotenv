@@ -2,6 +2,159 @@ class Athena::Dotenv; end
 
 require "./exceptions/*"
 
+# Using [Environment variables](https://en.wikipedia.org/wiki/Environment_variable) (ENV vars) is a common practice to configure options that depend on where the application is run;
+# allowing the application's configuration to be de-coupled from its code.
+# E.g. anything that changes from one machine to another, such as database credentials.
+#
+# `.env` files are a convenient way to get the benefits of ENV vars, without taking on the extra complexity of other tools/abstractions until if/when they are needed.
+# The file(s) can be defined at the root of your project for development, or placed next to the binary if running outside of a dev environment.
+# The `Athena::Dotenv` component parses the `.env` files to make ENV vars stored within them accessible.
+#
+# ## Getting Started
+#
+# If using this component within the [Athena Framework][Athena::Framework], it is already installed and required for you.
+# Checkout the [manual](/architecture/dotenv) for some additional information on how to use it within the framework.
+#
+# If using it outside of the framework, you will first need to add it as a dependency:
+#
+# ```yaml
+# dependencies:
+#   athena-dotenv:
+#     github: athena-framework/dotenv
+#     version: ~> 0.1.0
+# ```
+#
+# Then run `shards install`, being sure to require it via `require "athena-dotenv"`.
+#
+# ## Usage
+#
+# All usage involves using an `Athena::Dotenv` instance.
+# For example:
+#
+# ```
+# require "athena-dotenv"
+#
+# # Create a new instance
+# dotenv = Athena::Dotenv.new
+#
+# # Load a file
+# dotenv.load "./.env"
+#
+# # Load multiple files
+# dotenv.load "./.env", "./.env.dev"
+#
+# # Overrides existing variables
+# dotenv.overload "./.env"
+#
+# # Load all files for the current $APP_ENV
+# # .env, .env.local, and .env.$APP_ENV.local or .env.$APP_ENV
+# dotenv.load_environment "./.env"
+# ```
+# A `Athena::Dotenv::Exceptions::Path` error will be raised if the provided file was not found, or is not readable.
+#
+# ### Syntax
+#
+# ENV vars should be defined one per line.
+# There should be no space between the `=` between the var name and its value.
+#
+# ```text
+# DATABASE_URL=mysql://db_user:db_password@127.0.0.1:3306/db_name
+# ```
+#
+# A`Athena::Dotenv::Exceptions::Format` error will be raised if a formatting/parsing error is encountered.
+#
+# #### Comments
+#
+# Comments can be defined by prefixing them with a `#` character.
+# Comments can defined on its own line, or inlined after an ENV var definition.
+#
+# ```text
+# # Single line comment
+# FOO=BAR
+#
+# BAR=BAZ # Inline comment
+# ```
+#
+# #### Quotes
+#
+# Unquoted values, or those quoted with single (`'`) quotes behave as literals while double (`"`) quotes will have special chars expanded.
+# For example, given the following `.env` file:
+#
+# ```text
+# UNQUOTED=FOO\nBAR
+# SINGLE_QUOTES='FOO\nBAR'
+# DOUBLE_QUOTES="FOO\nBAR"
+# ```
+# ```
+# require "athena-dotenv"
+#
+# Athena::Dotenv.new.load "./.env"
+#
+# ENV["UNQUOTED"]      # => "FOO\\nBAR"
+# ENV["SINGLE_QUOTES"] # => "FOO\\nBAR"
+# ENV["DOUBLE_QUOTES"] # => "FOO\n" + "BAR"
+# ```
+#
+# Notice how only the double quotes version actually expands `\n` into a newline, whereas the others treat it as a literal `\n`.
+#
+# #### Variables
+#
+# ENV vars can be used in values by prefixing the variable name with a `$` with optional opening and closing `{}`.
+#
+# ```text
+# FOO=BAR
+# BAZ=$FOO
+# BIZ=${BAZ}
+# ```
+#
+# WARNING: The order is important when using variables.
+# In the previous example `FOO` must be defined `BAZ` which must be defined before `BIZ`.
+# This also extends to when loading multiple files, where a variable may use the value in another file.
+#
+# Default values may also be defined in case the related ENV var is not set:
+#
+# ```text
+# DB_USER=${DB_USER:-root}
+# ```
+#
+# This would set the value of `DB_USER` to be `root`, unless `DB_USER` is defined elsewhere in which case it would use the value of that variable.
+#
+# #### Commands
+#
+# Shell commands can be evaluated via `$()`.
+#
+# NOTE: Commands are currently not supported on Windows.
+#
+# ```text
+# DATE=$(date)
+# ```
+#
+# ### Overriding Values
+#
+# The default `.env` file defines _ALL_ ENV vars used within an application, with sane defaults.
+# This file should be committed and should not contain any sensitive values.
+#
+# However in some cases you may need to define values to override those in `.env`,
+# whether that be only for a single machine, or all machines in  specific environment.
+#
+# For these purposes there are other `.env` files that are loaded in a specific order to allow for just this use case:
+#
+# * `.env` - Defines all ENV vars, and their default values, used by the application
+# * `.env.local` - Overrides ENV vars for all environments, but only for the machine that contains the file.
+#       This file should _NOT_ be committed, and is ignored in the `test` environment to ensure reproducibility.
+# * `.env.<environment>` (e.g. `.env.test`) - Overrides ENV vars for only this one environment. These files _SHOULD_ be committed.
+# * `.env.<environment>.local` (e.g. `.env.test.local`) - Machine-specific overrides, but only for a single environment. This file should _NOT_ be committed.
+#
+# NOTE: Real ENV vars always win against those created in any `.env` file.
+#
+# TIP: Environment specific `.env` files should _ONLY_ to override values defined within the default `.env` file and _NOT_ as a replacement to it.
+# This ensures there is still a single source of truth and removes the need to duplicate everything for each environment.
+#
+# ### Production
+#
+# `.env` files are mainly intended for non-production environments in order to give the benefits of using ENV vars, but be more convenient/easier to use.
+# They can of course continue to be used in production by distributing the base `.env` file along with the binary, then creating a `.env.local` on the production server and including production values within it.
+# This can work quite well for simple applications, but ultimately a more robust solution that best leverages the features of the server the application is running on is best.
 class Athena::Dotenv
   VERSION = "0.1.0"
 
@@ -11,8 +164,6 @@ class Athena::Dotenv
     VARNAME
     VALUE
   end
-
-  getter prod_envs : Set(String) = Set{"prod"}
 
   @path : String | ::Path = ""
   @data = ""
@@ -132,16 +283,6 @@ class Athena::Dotenv
       loaded_vars.delete ""
       ENV["ATHENA_DOTENV_VARS"] = loaded_vars.join ','
     end
-  end
-
-  def prod_envs(*envs : String) : self
-    self.prod_envs envs
-  end
-
-  def prod_envs(prod_envs : Enumerable(String)) : self
-    @prod_envs = prod_envs.to_set
-
-    self
   end
 
   private def advance_reader(string : String) : Nil
