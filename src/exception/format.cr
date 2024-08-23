@@ -1,11 +1,13 @@
+require "./logic"
+
 # Raised when there is a parsing error within a `.env` file.
-class Athena::Dotenv::Exceptions::Format < RuntimeError
-  # Stores contextual information related to an `Athena::Dotenv::Exceptions::Format`.
+class Athena::Dotenv::Exception::Format < Athena::Dotenv::Exception::Logic
+  # Stores contextual information related to an `Athena::Dotenv::Exception::Format`.
   #
   # ```
   # begin
   #   dotenv = Athena::Dotenv.new.parse "NAME=Jim\nFOO=BAR BAZ"
-  # rescue ex : Athena::Dotenv::Exceptions::Format
+  # rescue ex : Athena::Dotenv::Exception::Format
   #   ctx = ex.context
   #
   #   ctx.path        # => ".env"
@@ -39,9 +41,9 @@ class Athena::Dotenv::Exceptions::Format < RuntimeError
   end
 
   # Returns an object containing contextual information about this error.
-  getter context : Athena::Dotenv::Exceptions::Format::Context
+  getter context : Athena::Dotenv::Exception::Format::Context
 
-  def initialize(message : String, @context : Athena::Dotenv::Exceptions::Format::Context, cause : ::Exception? = nil)
+  def initialize(message : String, @context : Athena::Dotenv::Exception::Format::Context, cause : ::Exception? = nil)
     super "#{message} in '#{@context.path}' at line #{@context.line_number}.\n#{@context.details}", cause
   end
 end
